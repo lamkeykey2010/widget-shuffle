@@ -56,3 +56,7 @@ Push to `main`. `.github/workflows/pages.yml` runs the tests, builds the static 
 ## Privacy
 
 The game does not make API requests. Local progress stays in the visitor's browser. Sharing happens only when the visitor chooses Share result and then pastes or sends it. Hosting the files on GitHub Pages necessarily uses GitHub's infrastructure. No client-side telemetry is added.
+
+## AdSense verification
+
+The page includes the Google AdSense account meta tag for `ca-pub-8094200952197851`. This is site ownership verification only. No ad script or banner is loaded. Google review and ad serving are separate steps in the publisher account.
