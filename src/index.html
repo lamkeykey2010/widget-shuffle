@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#eaf0e8"><title>Widget Shuffle · A place for every app</title><meta name="description" content="Ten free logic puzzles. Expand app icons into widgets and find a place for everything. Start small, then take on Expert."><meta property="og:title" content="Widget Shuffle"><meta property="og:description" content="A place for every app. Ten satisfying home-screen logic puzzles, from Intro to Expert."><meta name="twitter:card" content="summary"><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="styles.css"></head>
+<body>
+<header class="site-header"><a href="#level=1" class="brand">▦ <span>Widget Shuffle</span></a><span class="edition">TEN LITTLE MOMENTS OF ORDER</span><button id="help-button" class="quiet">How to play</button></header>
+<main>
+  <section class="intro">
+    <div class="eyebrow">A LITTLE DAILY ORDER</div><h1>A place for<br> every app.</h1>
+    <p class="lede" id="level-description">A bigger screen. A little more thought.<br>Make room, and see what unfolds.</p>
+    <div class="journey-heading"><span class="eyebrow">YOUR TEN SCREENS</span><span id="campaign-count">0 / 10 complete</span></div>
+    <div class="level-picker" id="level-picker" role="group" aria-label="Choose a puzzle level"></div>
+    <div class="level-navigation"><button id="previous-level" class="quiet" type="button">← Previous</button><span id="level-title">First Screen</span><button id="next-level" class="quiet" type="button">Next →</button></div>
+    <p class="difficulty-note" id="difficulty-note">Same rules. More possibilities.</p>
+    <div class="progress-label"><span id="progress">0 of 6 apps expanded</span><span id="timer">0:00</span></div><div class="progress-track"><div id="progress-fill"></div></div>
+    <p class="instruction">Drag a rectangle around <strong>one app</strong>. Its number tells you how many spaces it needs. On touch, you can tap two opposite corners.</p>
+    <div class="discovery" aria-label="App details"><div class="discovery-icon" id="discovery-icon">✦</div><div><span class="eyebrow" id="discovery-label">WAITING TO UNFOLD</span><p id="discovery-text">Every app has a little more to show you.</p></div></div>
+    <div class="tools"><button id="undo">↶ Undo</button><button id="resize" aria-pressed="false">Shrink mode</button><button id="hint">A little hint</button><button id="reset" class="quiet">Start over</button></div>
+    <div class="feedback" id="feedback" role="status" aria-live="polite">Start anywhere. Every app belongs somewhere.</div>
+    <section id="completion" class="completion" hidden><h2 id="completion-heading">Everything in its place.</h2><p id="result"></p><div class="completion-actions"><button id="continue-level" class="primary">Next screen →</button><button id="share">Share result</button></div><p class="small" id="best-result"></p></section>
+    <p class="small prototype-note">Fictional apps. Real little moments of satisfaction.</p>
+  </section>
+  <section class="phone-stage" aria-label="Your home-screen puzzle">
+    <div class="phone">
+      <div class="phone-status"><span>9:41</span><span class="island"></span><span>▰ 100%</span></div>
+      <div class="screen-heading"><div><span class="screen-kicker" id="screen-kicker">YOUR HARD SCREEN</span><h2>Make yourself at home.</h2></div><span class="screen-spark">✦</span></div>
+      <div id="board" class="board" role="group" aria-label="Home screen. Four columns and six rows. Use drag or select two corner cells."></div>
+      <div class="phone-footer"><span id="screen-status">Room for something good.</span><div class="page-dots"><span></span><span></span><span></span></div></div>
+      <div class="home-bar"></div>
+    </div>
+    <span class="screen-caption">Draw. Expand. Discover.</span>
+  </section>
+</main>
+<footer class="site-footer"><span>Inspired by Shikaku. Built for a little daily order.</span><span>Progress stays in this browser when storage is available.</span></footer>
+<dialog id="help"><button id="close-help" class="dialog-close" aria-label="Close instructions">×</button><div class="eyebrow">THE SMALL PRINT</div><h2>Grow an app into a widget.</h2><ol><li>Every icon has a number. That is its widget's area in grid spaces.</li><li>Drag between two corners to draw a rectangle. You can also tap the first corner, then the opposite corner.</li><li>Each rectangle must contain exactly one app icon and match its number.</li><li>Fill the screen without overlaps or gaps. Widgets reveal their content as they expand.</li></ol><p><strong>Change your mind?</strong> Hover over a widget and select its centre <strong>Shrink</strong> button. On touch, tap the widget to reveal the button. It returns that app to its original icon. Undo brings it back.</p><p>Keyboard: use Tab or the arrow keys to move between cells. Press Enter or Space on two corners. Press Delete on an occupied cell to shrink that widget, or Tab to its Shrink button. Escape cancels a selection.</p><p>Ten fixed puzzles, all available from the start. Each has one verified solution. Difficulty labels are a guide. Progress and completed-screen records are saved on this device when browser storage is available. Hints and Undo both count as moves. Undo does not refund a hint or play time.</p><p class="small">App content is fictional. No account, advertising or analytics. This is an original interface built around Shikaku's rectangle rules.</p></dialog>
+<script type="module" src="app.mjs"></script>
+</body></html>

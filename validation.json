@@ -1,0 +1,27 @@
+{
+  "release": "1.0.0",
+  "fixed_levels": 10,
+  "automated_tests": 18,
+  "every_level_independently_unique": true,
+  "browser_checks": {
+    "desktop": "Edge",
+    "phone_layout": "In-app browser, 323 CSS pixels",
+    "all_ten_levels_completed_through_ui": true,
+    "ten_completed_records_and_final_message": true,
+    "separate_saved_progress": true,
+    "next_screen_navigation": true,
+    "desktop_centre_shrink_button": true,
+    "keyboard_centre_shrink_button": true,
+    "tap_widget_then_shrink": true,
+    "shrinking_preserves_other_widgets": true,
+    "undo_restores_shrunk_widget": true,
+    "mobile_reload_restores_progress": true,
+    "desktop_widget_content_overflow_after_adaptation": false,
+    "mobile_horizontal_overflow": false,
+    "clipboard_result": "UI confirmed result copied",
+    "view_source_footer_link": "Removed",
+    "fixed_device_views": "Portrait phones for 1 to 5. Portrait tablets for 6, 7 and 10. Landscape tablets for 8 and 9.",
+    "landscape_levels_reverified_unique": true
+  },
+  "limits": ["Provisional human difficulty grading", "No daily generator or leaderboard", "Local-only progress and scores", "Physical touch hardware not tested"]
+}
