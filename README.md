@@ -33,9 +33,23 @@ Tab and arrow keys navigate the grid. Enter or Space select corners. Delete on a
 
 Progress is saved separately per level in local browser storage. Completed-screen records remain available when replaying. Best records prefer fewer hints, then faster time, then fewer moves. Undo does not refund used hints or elapsed time. Hints, shrinking and Undo count as moves. Invalid rectangle attempts do not count. Sharing copies the completed layout, time, hint count and a link to the same level. A manual-copy fallback is available when clipboard access is blocked.
 
-All levels are available from the start. There is no daily generator, leaderboard, account, backend, advertising or analytics. App content is fictional. Browser storage availability determines whether progress survives reloads.
+All ten campaign levels are available from the start. Endless mode generates seeded puzzles in the browser. There is no daily schedule, leaderboard, account, backend, advertising or analytics. App content is fictional. Browser storage availability determines whether progress survives reloads.
 
 Next level and Reset sit beside the top of the puzzle on wide screens. On smaller screens they sit above the board in a sticky row. Reset affects the current layout and can be reversed with Undo. The final level disables Next level, and the level picker remains available.
+
+## Endless mode
+
+Select Endless, then Next puzzle to get a new seed and random difficulty. The generator chooses an Easy, Medium, Hard or Expert profile. Phone/tablet shape and orientation are fixed for each seed. The seed input opens a specific puzzle, and Copy puzzle link is available before completion. Completed results also include the seed link.
+
+For example, `#seed=v1-morning-coffee` always recreates the same puzzle with generator version 1. Seeds accept `v1-` followed by 1 to 40 ASCII letters, digits or hyphens, ignoring case and surrounding whitespace. Invalid input and unknown versions are rejected. Campaign links such as `#level=7` still work.
+
+`src/generator.mjs` freezes v1's app catalogue and starting challenge geometry. Easy and Medium use randomized rectangular partitions. Hard and Expert recut and reflect the original challenge tilings, then randomize app assignment and clue positions. Each accepted candidate is checked for exactly one solution. Hard candidates must retain unresolved choices after basic deductions, and Expert candidates require look-ahead under the shared analyzer. These remain estimated tiers, not human playtest ratings.
+
+Generation yields to the browser and uses deterministic attempt and solver-node limits. It never accepts an unverified candidate. If the target tier is not found after 600 attempts, it uses an already verified simpler candidate with a lower label, or a transformed known unique Easy puzzle. Runtime deadlines do not affect which board a seed produces. This bounds the work while retaining reproducibility.
+
+Progress and best results for the latest twelve Endless seeds are stored separately from campaign records. Reset preserves completion records, and Undo can restore the previous layout during the current session. Shared links carry the puzzle seed, without the sender's moves or saved progress.
+
+Future generator changes must use a new seed prefix and preserve v1 behavior. Pinned board fingerprints guard against accidentally changing published seed links. Tests independently solve 120 seeds, check all four tiers and both orientations, verify reproducibility and routing, and cover bounded progress retention.
 
 ## Run locally
 
@@ -49,7 +63,7 @@ npm run preview
 
 Open the Local URL printed by the preview server. The preview serves the same `/widget-shuffle/` path used on GitHub Pages. The build produces `dist/index.html`, `dist/icon.svg` and `dist/.nojekyll`. The game logic and styles are bundled into the HTML.
 
-Editable sources are in `src/`. `src/levels.mjs` contains the ten fixed boards, without embedded solutions. Tests independently verify uniqueness, invalid moves, saved-state validation and progression. `scripts/difficulty.mjs` is an authoring analyzer and is not included in the deployed site.
+Editable sources are in `src/`. `src/levels.mjs` contains the ten fixed boards, without embedded solutions. Tests independently verify uniqueness, invalid moves, saved-state validation and progression. `src/analysis.mjs` is shared by generation and authoring, with `scripts/difficulty.mjs` re-exporting it for existing authoring tools. The deployed HTML includes the generator and analyzer, without requiring a server.
 
 ## Publish
 

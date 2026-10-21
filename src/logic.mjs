@@ -18,7 +18,7 @@ export function finished(level,placed){
   const all=placed.flatMap(p=>p.cells);
   return all.length===level.cols*level.rows&&new Set(all).size===all.length&&placed.length===level.apps.length&&placed.every((p,k)=>{const v=inspect(level,p.cells,placed.filter((_,j)=>j!==k));return v.ok&&v.id===p.id;});
 }
-export function solve(level,limit=2){
+export function solve(level,limit=2,nodeLimit=Infinity){
   const choices=level.apps.map(app=>{
     const out=[];
     for(let h=1;h<=level.rows;h++)if(app.area%h===0){const w=app.area/h;if(w>level.cols)continue;
@@ -28,8 +28,9 @@ export function solve(level,limit=2){
       }
     }return out;
   });
-  const solutions=[];
+  const solutions=[];let nodes=0;
   function visit(remaining,used,placed){
+    if(++nodes>nodeLimit)throw new Error('Solver budget exceeded');
     if(solutions.length>=limit)return;
     if(!remaining.length){if(used.size===level.cols*level.rows)solutions.push(placed);return;}
     let best;

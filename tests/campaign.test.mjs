@@ -4,25 +4,7 @@ import {levels} from '../src/levels.mjs';
 import {solve,finished,inspect,cellsFor} from '../src/logic.mjs';
 import {decodeProgress,validBest,isBetter} from '../src/state.mjs';
 import {analyze} from '../scripts/difficulty.mjs';
-function independentlySolve(level){
- const choices=[];
- for(let top=0;top<level.rows;top++)for(let left=0;left<level.cols;left++)for(let bottom=top;bottom<level.rows;bottom++)for(let right=left;right<level.cols;right++){
-  const area=(bottom-top+1)*(right-left+1);if(!level.apps.some(a=>a.area===area))continue;
-  const apps=level.apps.filter(a=>Math.floor(a.i/level.cols)>=top&&Math.floor(a.i/level.cols)<=bottom&&a.i%level.cols>=left&&a.i%level.cols<=right);
-  if(apps.length!==1||apps[0].area!==area)continue;
-  const cells=[];for(let r=top;r<=bottom;r++)for(let c=left;c<=right;c++)cells.push(r*level.cols+c);
-  choices.push({id:apps[0].id,cells});
- }
- const answers=[];let nodes=0;
- function visit(used,apps,placed){
-  if(answers.length>=2)return;if(++nodes>1000000)throw Error('Verifier budget exceeded');
-  if(used.size===level.cols*level.rows){answers.push(placed);return;}
-  let best;
-  for(let i=0;i<level.cols*level.rows;i++)if(!used.has(i)){const options=choices.filter(p=>p.cells.includes(i)&&!apps.has(p.id)&&!p.cells.some(c=>used.has(c)));if(!options.length)return;if(!best||options.length<best.length)best=options;}
-  for(const p of best)visit(new Set([...used,...p.cells]),new Set([...apps,p.id]),[...placed,p]);
- }
- visit(new Set(),new Set(),[]);return answers;
-}
+import {independentlySolve} from './independent-solver.mjs';
 for(const [rank,level] of Object.entries(levels))test(`Level ${rank}: one independently verified complete layout`,()=>{
  const independent=independentlySolve(level),actual=solve(level);
  assert.equal(independent.length,1);assert.equal(actual.length,1);assert.ok(finished(level,actual[0]));assert.ok(finished(level,independent[0]));

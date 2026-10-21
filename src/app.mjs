@@ -1,11 +1,12 @@
 import {cellsFor,inspect,finished,solve} from './logic.mjs';
 import {levels} from './levels.mjs';
-import {decodeProgress,validBest,isBetter} from './state.mjs';
+import {decodeProgress,validBest,isBetter,readEndlessArchive,storeEndlessProgress} from './state.mjs';
+import {normalizeSeed,generatePuzzle,routeFromHash,puzzleHash} from './generator.mjs';
 const $=id=>document.getElementById(id),board=$('board');
-const rankFromHash=()=>new URLSearchParams(location.hash.slice(1)).get('level');
-let initialRank='1';try{initialRank=localStorage.getItem('widget-shuffle-active')||'1';}catch{}
-if(levels[rankFromHash()])initialRank=rankFromHash();
-let activeMode=levels[initialRank]?initialRank:'1',level=levels[activeMode],storageKey='widget-shuffle-'+level.id;
+let initialRoute={rank:'1'},initialError='';
+let savedMode='1';try{savedMode=localStorage.getItem('widget-shuffle-active')||'1';}catch{}
+try{initialRoute=routeFromHash(location.hash||(savedMode.startsWith('seed=')?savedMode:`level=${savedMode}`));}catch(error){initialError=error.message;}
+let activeMode='1',level=levels['1'],storageKey='widget-shuffle-'+level.id,lastCampaignRank='1',generating=false,lastEndlessSeed=null;
 let placed=[],history=[],hints=0,moves=0,elapsed=0,started=false,resize=false,corner=null,drag=null,selection=null,lastApp=null,inspectingId=null;
 let solution=solve(level,1)[0];
 const sessions=new Map();
@@ -13,14 +14,25 @@ const appById=id=>level.apps.find(a=>a.id===id);
 const clone=value=>JSON.parse(JSON.stringify(value));
 const bestScores={};
 try{const saved=JSON.parse(localStorage.getItem('widget-shuffle-best-v1'));for(const rank of Object.keys(levels))if(validBest(saved?.[rank]))bestScores[rank]=saved[rank];}catch{}
+let endlessArchive=[];
+try{endlessArchive=readEndlessArchive(JSON.parse(localStorage.getItem('widget-shuffle-endless-v1')));lastEndlessSeed=endlessArchive[0]?.seed||null;}catch{}
+const currentBest=()=>level.seed?endlessArchive.find(entry=>entry.seed===level.seed)?.best:bestScores[activeMode];
 function save(){
- if(finished(level,placed)){const candidate={hints,moves,elapsed};if(isBetter(candidate,bestScores[activeMode]))bestScores[activeMode]=candidate;}
- try{localStorage.setItem(storageKey,JSON.stringify({placed,hints,moves,elapsed,started}));localStorage.setItem('widget-shuffle-best-v1',JSON.stringify(bestScores));localStorage.setItem('widget-shuffle-active',activeMode);}catch{}
+ let best=currentBest();
+ if(finished(level,placed)){const candidate={hints,moves,elapsed};if(isBetter(candidate,best))best=candidate;}
+ const progress={placed,hints,moves,elapsed,started};
+ if(level.seed)endlessArchive=storeEndlessProgress(endlessArchive,level.seed,clone(progress),best);
+ else if(best)bestScores[activeMode]=best;
+ try{
+  if(level.seed)localStorage.setItem('widget-shuffle-endless-v1',JSON.stringify(endlessArchive));
+  else{localStorage.setItem(storageKey,JSON.stringify(progress));localStorage.setItem('widget-shuffle-best-v1',JSON.stringify(bestScores));}
+  localStorage.setItem('widget-shuffle-active',level.seed?`seed=${level.seed}`:activeMode);
+ }catch{}
 }
 function restore(){
   placed=[];history=[];hints=0;moves=0;elapsed=0;started=false;lastApp=null;
   const session=sessions.get(activeMode);if(session){({placed,history,hints,moves,elapsed,started,lastApp}=clone(session));return;}
-  try{const data=decodeProgress(level,JSON.parse(localStorage.getItem(storageKey)));if(data){({placed,hints,moves,elapsed,started}=data);lastApp=placed.at(-1)?.id||null;}}catch{placed=[];}
+  try{const raw=level.seed?endlessArchive.find(entry=>entry.seed===level.seed)?.progress:JSON.parse(localStorage.getItem(storageKey));const data=decodeProgress(level,raw);if(data){({placed,hints,moves,elapsed,started}=data);lastApp=placed.at(-1)?.id||null;}}catch{placed=[];}
 }
 const formatTime=seconds=>`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
 function message(text,error=false){$('feedback').textContent=text;$('feedback').classList.toggle('error',error);}
@@ -63,10 +75,13 @@ function render(newId=null){
   $('completion').hidden=!done;if(done)$('result').textContent=`${level.name} · ${formatTime(elapsed)} · ${moves} moves · ${hints} ${hints===1?'hint':'hints'}`;
   document.querySelectorAll('[data-level]').forEach(button=>{const rank=button.dataset.level,completed=!!bestScores[rank];button.setAttribute('aria-pressed',String(rank===activeMode));button.classList.toggle('completed',completed);button.querySelector('.level-mark').textContent=completed?'✓':'';button.setAttribute('aria-label',`Level ${rank}, ${levels[rank].title}, ${levels[rank].difficulty}${completed?', completed':''}`);});
   const completedCount=Object.keys(bestScores).length;$('campaign-count').textContent=`${completedCount} / 10 complete`;
-  $('completion-heading').textContent=completedCount===10?'All ten. All in their place.':'Everything in its place.';
-  $('previous-level').disabled=level.rank===1;$('next-level').disabled=level.rank===10;$('level-title').textContent=level.title;
-  $('continue-level').textContent=level.rank===10?'Back to the first screen':'Next screen →';
-  const best=bestScores[activeMode];$('best-result').textContent=best?`Best on this device: ${formatTime(best.elapsed)} with ${best.hints} ${best.hints===1?'hint':'hints'}.`:'';
+  $('completion-heading').textContent=!level.seed&&completedCount===10?'All ten. All in their place.':'Everything in its place.';
+  $('previous-level').disabled=level.rank===1;$('next-level').disabled=!level.seed&&level.rank===10;$('level-title').textContent=level.title;
+  $('next-level').textContent=level.seed?'Next puzzle →':'Next level →';
+  $('continue-level').textContent=level.seed?'Next puzzle →':level.rank===10?'Back to the first screen':'Next screen →';
+  const best=currentBest();$('best-result').textContent=best?`Best on this device: ${formatTime(best.elapsed)} with ${best.hints} ${best.hints===1?'hint':'hints'}.`:'';
+  const savedCompletions=endlessArchive.filter(entry=>entry.best).length;
+  $('endless-count').textContent=`${savedCompletions} saved ${savedCompletions===1?'completion':'completions'}`;
   if(lastApp){const app=appById(lastApp);$('discovery-icon').textContent=app.glyph;$('discovery-icon').className='discovery-icon '+app.tone;$('discovery-label').textContent=app.name.toUpperCase()+' · UNFOLDED';$('discovery-text').textContent=app.detail;}
   else{$('discovery-icon').textContent='✦';$('discovery-icon').className='discovery-icon';$('discovery-label').textContent='WAITING TO UNFOLD';$('discovery-text').textContent='Every app has a little more to show you.';}
   if(focusIndex!==undefined)board.querySelector(`[data-cell="${focusIndex}"]`)?.focus({preventScroll:true});
@@ -94,29 +109,66 @@ $('hint').addEventListener('click',()=>{checkpoint();const same=(a,b)=>a.length=
 });
 $('help-button').addEventListener('click',()=>$('help').showModal());$('close-help').addEventListener('click',()=>$('help').close());
 $('share').addEventListener('click',async()=>{if(!finished(level,placed))return;const emoji={sky:'🟦',rose:'🟥',mint:'🟩',butter:'🟨',lilac:'🟪',peach:'🟧'};const mosaic=Array.from({length:level.rows},(_,r)=>Array.from({length:level.cols},(_,c)=>emoji[appById(placed.find(p=>p.cells.includes(r*level.cols+c)).id).tone]).join('')).join('\n');const address=location.protocol.startsWith('http')?`\n${location.href}`:'';const text=`Widget Shuffle · ${level.name} · ${level.cols} × ${level.rows}\n${mosaic}\n${formatTime(elapsed)} · ${moves} moves · ${hints} hints\nA place for every app.${address}`;
-  try{await navigator.clipboard.writeText(text);message('Result copied. Ready to share.');}catch{$('share-text').value=text;$('share-fallback').showModal();}
+  await copyText(text,'Result copied. Ready to share.');
 });
-const fallback=document.createElement('dialog');fallback.id='share-fallback';fallback.innerHTML='<h2>Your finished screen</h2><textarea id="share-text" aria-label="Share result" readonly rows="11"></textarea><button type="button">Close</button>';document.body.append(fallback);fallback.querySelector('button').addEventListener('click',()=>fallback.close());fallback.querySelector('textarea').style.cssText='width:100%;font:14px/1.6 monospace;padding:10px;border:1px solid #bac8b7;border-radius:10px;background:#fffef7;color:#293d35';
-setInterval(()=>{if(started&&!finished(level,placed)&&!document.hidden&&!$('help').open){elapsed++;$('timer').textContent=formatTime(elapsed);if(elapsed%5===0)save();}},1000);
-function chooseLevel(mode,initial=false){
-  if(!levels[mode])return;
-  if(!initial){save();sessions.set(activeMode,clone({placed,history,hints,moves,elapsed,started,lastApp}));}
+const fallback=document.createElement('dialog');fallback.id='share-fallback';fallback.innerHTML='<h2>Share this screen</h2><textarea id="share-text" aria-label="Share text" readonly rows="11"></textarea><button type="button">Close</button>';document.body.append(fallback);fallback.querySelector('button').addEventListener('click',()=>fallback.close());fallback.querySelector('textarea').style.cssText='width:100%;font:14px/1.6 monospace;padding:10px;border:1px solid #bac8b7;border-radius:10px;background:#fffef7;color:#293d35';
+async function copyText(text,success){try{await navigator.clipboard.writeText(text);message(success);}catch{$('share-text').value=text;$('share-fallback').showModal();}}
+setInterval(()=>{if(!generating&&started&&!finished(level,placed)&&!document.hidden&&!$('help').open){elapsed++;$('timer').textContent=formatTime(elapsed);if(elapsed%5===0)save();}},1000);
+function rememberSession(){
+ save();sessions.delete(activeMode);sessions.set(activeMode,clone({placed,history,hints,moves,elapsed,started,lastApp}));
+ if(sessions.size>22){const oldest=[...sessions.keys()].find(key=>key.startsWith('seed:'));if(oldest)sessions.delete(oldest);}
+}
+function showPuzzle(next,mode,initial=false){
+  if(!initial)rememberSession();
   if(drag&&board.hasPointerCapture(drag.pointer))board.releasePointerCapture(drag.pointer);
-  activeMode=mode;level=levels[mode];storageKey='widget-shuffle-'+level.id;solution=solve(level,1)[0];
+  activeMode=mode;level=next;storageKey='widget-shuffle-'+level.id;solution=solve(level,1)[0];
   corner=null;selection=null;drag=null;resize=false;inspectingId=null;restore();document.body.dataset.mode=level.cols>=7?'expert':level.cols>=6?'hard':'intro';document.body.dataset.device=level.device;document.body.dataset.orientation=level.orientation;
+  $('campaign-mode').setAttribute('aria-pressed',String(!level.seed));$('endless-mode').setAttribute('aria-pressed',String(!!level.seed));
+  $('campaign-heading').hidden=!!level.seed;$('level-picker').hidden=!!level.seed;$('campaign-navigation').hidden=!!level.seed;$('endless-panel').hidden=!level.seed;
+  if(level.seed){lastEndlessSeed=level.seed;$('seed-input').value=level.seed;}else lastCampaignRank=mode;
   board.style.setProperty('--cols',level.cols);board.style.setProperty('--rows',level.rows);
   board.style.setProperty('--board-ratio',`${level.cols} / ${level.rows*(level.cols>=6?.8:.91)}`);
   board.setAttribute('aria-label',`${level.name} home screen. ${level.cols} columns and ${level.rows} rows. Drag or select two corner cells.`);
-  $('screen-kicker').textContent=`LEVEL ${level.rank} · ${level.device==='tablet'?'TABLET':'PHONE'} · ${level.cols} × ${level.rows}`;
-  $('level-description').textContent=`${level.title}. ${level.apps.length} apps, ${level.cols*level.rows} spaces, one satisfying layout.`;
+  $('screen-kicker').textContent=`${level.seed?'ENDLESS':`LEVEL ${level.rank}`} · ${level.device==='tablet'?'TABLET':'PHONE'} · ${level.cols} × ${level.rows}`;
+  $('level-description').textContent=`${level.seed?'A fresh arrangement':level.title}. ${level.apps.length} apps, ${level.cols*level.rows} spaces, one satisfying layout.`;
   $('difficulty-note').textContent=`${level.difficulty} · ${level.device==='tablet'?'Tablet':'Phone'} · ${level.orientation==='landscape'?'Landscape':'Portrait'}`;
-  window.history.replaceState(null,'',`#level=${mode}`);try{localStorage.setItem('widget-shuffle-active',mode);}catch{}
-  if(finished(level,placed))save();
-  render();message(`${level.name}. ${level.apps.length} apps, one complete layout. Progress is saved separately.`);
+  window.history.replaceState(null,'',puzzleHash(level));
+  if(level.seed||finished(level,placed))save();
+  else try{localStorage.setItem('widget-shuffle-active',mode);}catch{}
+  render();message(`${level.seed?`Endless · ${level.difficulty}`:level.name}. ${level.apps.length} apps, one complete layout. Progress is saved separately.`);
+}
+function chooseLevel(mode,initial=false){if(!generating&&levels[mode])showPuzzle(levels[mode],mode,initial);}
+function freshSeed(){
+ const numbers=new Uint32Array(2);crypto.getRandomValues(numbers);
+ return `v1-${[...numbers].map(n=>n.toString(36)).join('-')}`;
+}
+function setGenerating(value){
+ generating=value;document.querySelector('main').setAttribute('aria-busy',String(value));board.inert=value;
+ for(const element of document.querySelectorAll('[data-level],.play-modes button,#seed-input,#load-seed,#copy-puzzle,.puzzle-actions button,.tools button,#previous-level,#continue-level,#share'))element.disabled=value;
+}
+async function chooseSeed(input,initial=false){
+ if(generating)return;
+ let seed;
+ try{seed=normalizeSeed(input);}catch(error){message(error.message,true);return;}
+ if(seed===level.seed){$('seed-input').value=seed;window.history.replaceState(null,'',puzzleHash(level));message('This seed is already open. Reset starts its layout again.');return;}
+ setGenerating(true);message('Making room for a new puzzle…');
+ await new Promise(resolve=>setTimeout(resolve,0));
+ try{
+  const iterator=generatePuzzle(seed);let step,count=0;
+  do{step=iterator.next();if(!step.done&&++count%12===0)await new Promise(resolve=>setTimeout(resolve,0));}while(!step.done);
+  showPuzzle(step.value,`seed:${seed}`,initial);
+ }catch(error){message(`Could not open that puzzle. ${error.message}`,true);window.history.replaceState(null,'',puzzleHash(level));}
+ finally{setGenerating(false);render();}
 }
 for(const [rank,entry] of Object.entries(levels)){const button=document.createElement('button');button.type='button';button.dataset.level=rank;button.setAttribute('aria-pressed','false');button.innerHTML=`<span class="level-number">${rank}<span class="level-mark" aria-hidden="true"></span></span><span class="level-difficulty">${entry.difficulty}</span>`;button.title=entry.title;button.addEventListener('click',()=>{if(activeMode!==rank)chooseLevel(rank);});$('level-picker').append(button);}
 $('previous-level').addEventListener('click',()=>chooseLevel(String(level.rank-1)));
-$('next-level').addEventListener('click',()=>chooseLevel(String(level.rank+1)));
-$('continue-level').addEventListener('click',()=>{chooseLevel(level.rank===10?'1':String(level.rank+1));document.querySelector('.site-header').scrollIntoView({behavior:'instant',block:'start'});});
-window.addEventListener('hashchange',()=>{const rank=rankFromHash();if(levels[rank]&&rank!==activeMode)chooseLevel(rank);});
-window.addEventListener('pagehide',save);new ResizeObserver(adaptWidgets).observe(board);chooseLevel(activeMode,true);
+$('next-level').addEventListener('click',()=>level.seed?chooseSeed(freshSeed()):chooseLevel(String(level.rank+1)));
+$('continue-level').addEventListener('click',()=>{if(level.seed)chooseSeed(freshSeed());else chooseLevel(level.rank===10?'1':String(level.rank+1));document.querySelector('.site-header').scrollIntoView({behavior:'instant',block:'start'});});
+$('campaign-mode').addEventListener('click',()=>{if(level.seed)chooseLevel(lastCampaignRank);});
+$('endless-mode').addEventListener('click',()=>{if(!level.seed)chooseSeed(lastEndlessSeed||freshSeed());});
+$('seed-form').addEventListener('submit',event=>{event.preventDefault();chooseSeed($('seed-input').value);});
+$('copy-puzzle').addEventListener('click',()=>{if(!level.seed)return;const url=new URL(location.protocol.startsWith('http')?location.href:'https://lamkeykey2010.github.io/widget-shuffle/');url.hash=puzzleHash(level);copyText(`Widget Shuffle · ${level.difficulty}\nSeed: ${level.seed}\n${url.href}`,'Puzzle link copied. Same seed, same screen.');});
+window.addEventListener('hashchange',()=>{try{const route=routeFromHash(location.hash);if(route.seed){if(route.seed!==level.seed)chooseSeed(route.seed);}else if(route.rank!==activeMode)chooseLevel(route.rank);}catch(error){window.history.replaceState(null,'',puzzleHash(level));message(error.message,true);}});
+window.addEventListener('pagehide',save);new ResizeObserver(adaptWidgets).observe(board);
+if(initialRoute.seed)chooseSeed(initialRoute.seed,true);else chooseLevel(initialRoute.rank,true);
+if(initialError)message(initialError,true);
