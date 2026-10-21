@@ -35,6 +35,8 @@ Progress is saved separately per level in local browser storage. Completed-scree
 
 All levels are available from the start. There is no daily generator, leaderboard, account, backend, advertising or analytics. App content is fictional. Browser storage availability determines whether progress survives reloads.
 
+Next level and Reset sit beside the top of the puzzle on wide screens. On smaller screens they sit above the board in a sticky row. Reset affects the current layout and can be reversed with Undo. The final level disables Next level, and the level picker remains available.
+
 ## Run locally
 
 Requires Node.js 22 or newer. No dependencies or secret keys.
