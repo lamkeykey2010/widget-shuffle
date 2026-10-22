@@ -1,38 +1,46 @@
-import {cellsFor,inspect,finished,solve} from './logic.mjs';
+import {cellsFor,inspect,finished,solve,initialPlacements} from './logic.mjs';
 import {levels} from './levels.mjs';
-import {decodeProgress,validBest,isBetter,readEndlessArchive,storeEndlessProgress} from './state.mjs';
+import {decodeProgress,validBest,isBetter,readEndlessArchive,storeEndlessProgress,readDailyArchive,storeDailyProgress} from './state.mjs';
 import {normalizeSeed,generatePuzzle,routeFromHash,puzzleHash} from './generator.mjs';
+import {generateDaily,hongKongDay} from './daily.mjs';
+import {readRoute,shareHash,campaignChapters} from './routing.mjs';
+import {legacyLevels,legacyRanks} from './legacy.mjs';
 const $=id=>document.getElementById(id),board=$('board');
 let initialRoute={rank:'1'},initialError='';
 let savedMode='1';try{savedMode=localStorage.getItem('widget-shuffle-active')||'1';}catch{}
-try{initialRoute=routeFromHash(location.hash||(savedMode.startsWith('seed=')?savedMode:`level=${savedMode}`));}catch(error){initialError=error.message;}
+try{initialRoute=readRoute(location.hash||(savedMode.includes('=')?savedMode:`level=${savedMode}`));}catch(error){initialError=error.message;}
 let activeMode='1',level=levels['1'],storageKey='widget-shuffle-'+level.id,lastCampaignRank='1',generating=false,lastEndlessSeed=null;
+let currentChapter=1;
 let placed=[],history=[],hints=0,moves=0,elapsed=0,started=false,resize=false,corner=null,drag=null,selection=null,lastApp=null,inspectingId=null;
 let solution=solve(level,1)[0];
 const sessions=new Map();
 const appById=id=>level.apps.find(a=>a.id===id);
 const clone=value=>JSON.parse(JSON.stringify(value));
 const bestScores={};
-try{const saved=JSON.parse(localStorage.getItem('widget-shuffle-best-v1'));for(const rank of Object.keys(levels))if(validBest(saved?.[rank]))bestScores[rank]=saved[rank];}catch{}
+try{const saved=JSON.parse(localStorage.getItem('widget-shuffle-best-v2'));for(const entry of Object.values(levels))if(validBest(saved?.[entry.id]))bestScores[entry.id]=saved[entry.id];}catch{}
+try{const old=JSON.parse(localStorage.getItem('widget-shuffle-best-v1'));for(const [rank,entry] of Object.entries(legacyLevels))if(validBest(old?.[rank])&&isBetter(old[rank],bestScores[entry.id]))bestScores[entry.id]=old[rank];}catch{}
 let endlessArchive=[];
 try{endlessArchive=readEndlessArchive(JSON.parse(localStorage.getItem('widget-shuffle-endless-v1')));lastEndlessSeed=endlessArchive[0]?.seed||null;}catch{}
-const currentBest=()=>level.seed?endlessArchive.find(entry=>entry.seed===level.seed)?.best:bestScores[activeMode];
+let dailyArchive=[];try{dailyArchive=readDailyArchive(JSON.parse(localStorage.getItem('widget-shuffle-daily-v1')));}catch{}
+const currentBest=()=>level.daily?dailyArchive.find(entry=>entry.day===level.daily)?.best:level.seed?endlessArchive.find(entry=>entry.seed===level.seed)?.best:bestScores[level.id];
 function save(){
  let best=currentBest();
  if(finished(level,placed)){const candidate={hints,moves,elapsed};if(isBetter(candidate,best))best=candidate;}
  const progress={placed,hints,moves,elapsed,started};
- if(level.seed)endlessArchive=storeEndlessProgress(endlessArchive,level.seed,clone(progress),best);
- else if(best)bestScores[activeMode]=best;
+ if(level.daily)dailyArchive=storeDailyProgress(dailyArchive,level.daily,clone(progress),best);
+ else if(level.seed)endlessArchive=storeEndlessProgress(endlessArchive,level.seed,clone(progress),best);
+ else if(best)bestScores[level.id]=best;
  try{
-  if(level.seed)localStorage.setItem('widget-shuffle-endless-v1',JSON.stringify(endlessArchive));
-  else{localStorage.setItem(storageKey,JSON.stringify(progress));localStorage.setItem('widget-shuffle-best-v1',JSON.stringify(bestScores));}
-  localStorage.setItem('widget-shuffle-active',level.seed?`seed=${level.seed}`:activeMode);
+  if(level.daily)localStorage.setItem('widget-shuffle-daily-v1',JSON.stringify(dailyArchive));
+  else if(level.seed)localStorage.setItem('widget-shuffle-endless-v1',JSON.stringify(endlessArchive));
+  else{localStorage.setItem(storageKey,JSON.stringify(progress));localStorage.setItem('widget-shuffle-best-v2',JSON.stringify(bestScores));}
+  localStorage.setItem('widget-shuffle-active',shareHash(level).slice(1));
  }catch{}
 }
 function restore(){
-  placed=[];history=[];hints=0;moves=0;elapsed=0;started=false;lastApp=null;
+  placed=initialPlacements(level);history=[];hints=0;moves=0;elapsed=0;started=false;lastApp=null;
   const session=sessions.get(activeMode);if(session){({placed,history,hints,moves,elapsed,started,lastApp}=clone(session));return;}
-  try{const raw=level.seed?endlessArchive.find(entry=>entry.seed===level.seed)?.progress:JSON.parse(localStorage.getItem(storageKey));const data=decodeProgress(level,raw);if(data){({placed,hints,moves,elapsed,started}=data);lastApp=placed.at(-1)?.id||null;}}catch{placed=[];}
+  try{const raw=level.daily?dailyArchive.find(entry=>entry.day===level.daily)?.progress:level.seed?endlessArchive.find(entry=>entry.seed===level.seed)?.progress:JSON.parse(localStorage.getItem(storageKey));const data=decodeProgress(level,raw);if(data){({placed,hints,moves,elapsed,started}=data);lastApp=placed.filter(p=>!level.locked?.some(lock=>lock.id===p.id)).at(-1)?.id||null;}}catch{placed=initialPlacements(level);}
 }
 const formatTime=seconds=>`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
 function message(text,error=false){$('feedback').textContent=text;$('feedback').classList.toggle('error',error);}
@@ -62,23 +70,27 @@ function render(newId=null){
     const cell=document.createElement('button');cell.type='button';cell.className='cell';cell.dataset.cell=i;
     const app=level.apps.find(a=>a.i===i),owner=placed.find(p=>p.cells.includes(i));
     cell.setAttribute('aria-label',`Row ${Math.floor(i/level.cols)+1}, column ${i%level.cols+1}${app?`, ${app.name}, ${app.area} spaces`:''}${owner?`, inside ${appById(owner.id).name} widget`:''}${owner&&app?`, ${app.detail}`:''}`);
-    if(owner)cell.classList.add('covered');
-    else if(app){cell.innerHTML=`<span class="app-seed"><span class="app-icon ${app.tone}">${app.glyph}<span class="area-badge">${app.area}</span></span><span class="app-name">${app.name}</span></span>`;}
+    if(level.blocked?.includes(i)){cell.classList.add('blocked');cell.disabled=true;cell.setAttribute('aria-label',`Row ${Math.floor(i/level.cols)+1}, column ${i%level.cols+1}, blocked space`);cell.innerHTML='<span aria-hidden="true">×</span>';}
+    else if(owner)cell.classList.add('covered');
+    else if(app){cell.innerHTML=`<span class="app-seed"><span class="app-icon ${app.tone}">${app.glyph}<span class="area-badge">${app.area}</span>${app.shape?`<span class="shape-badge" title="Must be ${app.shape}">${{wide:'↔',tall:'↕',square:'□'}[app.shape]}</span>`:''}</span><span class="app-name">${app.name}</span></span>`;}
+    if(app?.shape)cell.setAttribute('aria-label',cell.getAttribute('aria-label')+`, must be ${app.shape}`);
     if(corner===i)cell.classList.add('corner');board.append(cell);
   }
-  for(const p of placed){const app=appById(p.id),element=document.createElement('div');element.className=`widget ${app.tone}${p.id===newId?' bloom':''}${p.id===inspectingId?' inspecting':''}`;element.dataset.app=p.id;element.setAttribute('role','group');element.setAttribute('aria-label',`${app.name} widget`);const b=position(element,p.cells);const compact=b.h===1||(level.cols>=6&&b.h<=2&&b.w<=2);element.dataset.height=b.h;if(compact)element.classList.add('compact');if(b.w===1)element.classList.add('narrow');element.style.transformOrigin=`${((app.i%level.cols-b.c+.5)/b.w)*100}% ${((Math.floor(app.i/level.cols)-b.r+.5)/b.h)*100}%`;element.innerHTML=`<div class="widget-content" aria-hidden="true"><div class="widget-top"><span>${app.name}</span><span class="widget-area">${app.area}</span></div><div class="widget-body">${widgetBody(app,compact,b.w===1)}</div><div class="widget-mobile">${smallWidget(app,b.w===1)}</div></div><button type="button" class="widget-shrink" data-shrink="${app.id}" aria-label="Shrink ${app.name} back to its app icon">↙ <span>Shrink</span></button>`;board.append(element);}
+  for(const p of placed){const app=appById(p.id),element=document.createElement('div');element.className=`widget ${app.tone}${p.id===newId?' bloom':''}${p.id===inspectingId?' inspecting':''}`;element.dataset.app=p.id;element.setAttribute('role','group');element.setAttribute('aria-label',`${app.name} widget`);const b=position(element,p.cells);const compact=b.h===1||(level.cols>=6&&b.h<=2&&b.w<=2);element.dataset.height=b.h;if(compact)element.classList.add('compact');if(b.w===1)element.classList.add('narrow');element.style.transformOrigin=`${((app.i%level.cols-b.c+.5)/b.w)*100}% ${((Math.floor(app.i/level.cols)-b.r+.5)/b.h)*100}%`;element.innerHTML=`<div class="widget-content" aria-hidden="true"><div class="widget-top"><span>${app.name}</span><span class="widget-area">${app.area}</span></div><div class="widget-body">${widgetBody(app,compact,b.w===1)}</div><div class="widget-mobile">${smallWidget(app,b.w===1)}</div></div><button type="button" class="widget-shrink" data-shrink="${app.id}" aria-label="Shrink ${app.name} back to its app icon">↙ <span>Shrink</span></button>`;if(level.locked?.some(lock=>lock.id===p.id)){element.classList.add("locked-widget");element.querySelector(".widget-shrink").remove();const badge=document.createElement("span");badge.className="widget-lock";badge.textContent="🔒 Fixed";element.append(badge);element.setAttribute("aria-label",`${app.name} locked widget`);}board.append(element);}
   if(selection){const cells=cellsFor(level.cols,selection[0],selection[1]),valid=inspect(level,cells,placed);const overlay=document.createElement('div');overlay.className='selection'+(valid.ok?'':' invalid');position(overlay,cells);overlay.innerHTML=`<span>${cells.length} ${cells.length===1?'space':'spaces'}</span>`;board.append(overlay);}
   const done=finished(level,placed),area=placed.reduce((n,p)=>n+p.cells.length,0);
-  $('progress').textContent=`${placed.length} of ${level.apps.length} apps expanded`;$('progress-fill').style.width=`${area/(level.cols*level.rows)*100}%`;$('timer').textContent=formatTime(elapsed);
-  $('undo').disabled=!history.length;$('resize').disabled=!placed.length;$('resize').setAttribute('aria-pressed',String(resize));$('hint').disabled=done;
-  $('screen-status').textContent=done?'Everything in its place.':resize?'Choose a widget to shrink.':`${level.cols*level.rows-area} spaces waiting to unfold.`;
+  const fixedCount=level.locked?.length||0,fixedArea=level.locked?.reduce((n,p)=>n+p.cells.length,0)||0,total=level.cols*level.rows-(level.blocked?.length||0);
+  $('progress').textContent=`${placed.length-fixedCount} of ${level.apps.length-fixedCount} apps expanded${fixedCount?` · ${fixedCount} fixed`:''}`;$('progress-fill').style.width=`${(area-fixedArea)/(total-fixedArea)*100}%`;$('timer').textContent=formatTime(elapsed);
+  $('undo').disabled=!history.length;$('resize').disabled=placed.length===fixedCount;$('resize').setAttribute('aria-pressed',String(resize));$('hint').disabled=done;
+  $('screen-status').textContent=done?'Everything in its place.':resize?'Choose a widget to shrink.':`${total-area} spaces waiting to unfold.`;
   $('completion').hidden=!done;if(done)$('result').textContent=`${level.name} · ${formatTime(elapsed)} · ${moves} moves · ${hints} ${hints===1?'hint':'hints'}`;
-  document.querySelectorAll('[data-level]').forEach(button=>{const rank=button.dataset.level,completed=!!bestScores[rank];button.setAttribute('aria-pressed',String(rank===activeMode));button.classList.toggle('completed',completed);button.querySelector('.level-mark').textContent=completed?'✓':'';button.setAttribute('aria-label',`Level ${rank}, ${levels[rank].title}, ${levels[rank].difficulty}${completed?', completed':''}`);});
-  const completedCount=Object.keys(bestScores).length;$('campaign-count').textContent=`${completedCount} / 10 complete`;
-  $('completion-heading').textContent=!level.seed&&completedCount===10?'All ten. All in their place.':'Everything in its place.';
-  $('previous-level').disabled=level.rank===1;$('next-level').disabled=!level.seed&&level.rank===10;$('level-title').textContent=level.title;
-  $('next-level').textContent=level.seed?'Next puzzle →':'Next level →';
-  $('continue-level').textContent=level.seed?'Next puzzle →':level.rank===10?'Back to the first screen':'Next screen →';
+  document.querySelectorAll('[data-level]').forEach(button=>{const rank=button.dataset.level,completed=!!bestScores[levels[rank].id];button.hidden=Math.ceil(Number(rank)/10)!==currentChapter;button.setAttribute('aria-pressed',String(rank===activeMode));button.classList.toggle('completed',completed);button.querySelector('.level-mark').textContent=completed?'✓':'';button.setAttribute('aria-label',`Level ${rank}, ${levels[rank].title}, ${levels[rank].difficulty}${completed?', completed':''}`);});
+  $('chapter-select').value=String(currentChapter);$('previous-chapter').disabled=currentChapter===1;$('next-chapter').disabled=currentChapter===10;
+  const completedCount=Object.keys(bestScores).length;$('campaign-count').textContent=`${completedCount} / 100 complete`;
+  $('completion-heading').textContent=!level.seed&&!level.daily&&completedCount===100?'All one hundred. All in their place.':'Everything in its place.';
+  $('previous-level').disabled=level.rank===1;$('next-level').disabled=!level.seed&&!level.daily&&level.rank===100;$('level-title').textContent=level.title;
+  $('next-level').textContent=level.daily?'Share daily ↗':level.seed?'Next puzzle →':'Next level →';
+  $('continue-level').textContent=level.daily?'Try Endless →':level.seed?'Next puzzle →':level.rank===100?'Back to the first screen':'Next screen →';
   const best=currentBest();$('best-result').textContent=best?`Best on this device: ${formatTime(best.elapsed)} with ${best.hints} ${best.hints===1?'hint':'hints'}.`:'';
   const savedCompletions=endlessArchive.filter(entry=>entry.best).length;
   $('endless-count').textContent=`${savedCompletions} saved ${savedCompletions===1?'completion':'completions'}`;
@@ -89,26 +101,26 @@ function render(newId=null){
   adaptWidgets();
 }
 function commit(a,b){const cells=cellsFor(level.cols,a,b),v=inspect(level,cells,placed);corner=null;selection=null;inspectingId=null;if(!v.ok){render();message(v.message,true);return;}checkpoint();placed.push({id:v.id,cells});moves++;started=true;lastApp=v.id;resize=false;save();render(v.id);message(finished(level,placed)?'You made room for everything. Your screen is complete.':v.message);}
-function shrink(i){const p=placed.find(p=>p.cells.includes(i));if(!p){message('Select an expanded widget to return it to an app icon.');return;}checkpoint();placed=placed.filter(v=>v!==p);moves++;started=true;corner=null;selection=null;resize=false;lastApp=null;inspectingId=null;save();render();board.querySelector(`[data-cell="${appById(p.id).i}"]`)?.focus({preventScroll:true});message(`${appById(p.id).name} returned to its app icon. Undo can bring its widget back.`);}
-function tap(i){if(resize){shrink(i);return;}if(corner===null){const owner=placed.find(p=>p.cells.includes(i));if(owner){lastApp=owner.id;inspectingId=inspectingId===owner.id?null:owner.id;render();message(`Select Shrink to return ${appById(owner.id).name} to its icon.`);return;}inspectingId=null;corner=i;selection=null;started=true;render();message('Now select the opposite corner of your widget.');}else commit(corner,i);}
+function shrink(i){const p=placed.find(p=>p.cells.includes(i));if(!p){message('Select an expanded widget to return it to an app icon.');return;}if(level.locked?.some(lock=>lock.id===p.id)){message(`${appById(p.id).name} is fixed. Build around it.`);return;}checkpoint();placed=placed.filter(v=>v!==p);moves++;started=true;corner=null;selection=null;resize=false;lastApp=null;inspectingId=null;save();render();board.querySelector(`[data-cell="${appById(p.id).i}"]`)?.focus({preventScroll:true});message(`${appById(p.id).name} returned to its app icon. Undo can bring its widget back.`);}
+function tap(i){if(level.blocked?.includes(i)){message('Blocked spaces stay empty. Build around them.');return;}if(resize){shrink(i);return;}if(corner===null){const owner=placed.find(p=>p.cells.includes(i));if(owner){if(level.locked?.some(lock=>lock.id===owner.id)){message(`${appById(owner.id).name} is fixed. Build around it.`);return;}lastApp=owner.id;inspectingId=inspectingId===owner.id?null:owner.id;render();message(`Select Shrink to return ${appById(owner.id).name} to its icon.`);return;}inspectingId=null;corner=i;selection=null;started=true;render();message('Now select the opposite corner of your widget.');}else commit(corner,i);}
 function hit(event){const r=board.getBoundingClientRect();if(event.clientX<r.left||event.clientX>=r.right||event.clientY<r.top||event.clientY>=r.bottom)return null;return Math.min(level.rows-1,Math.floor((event.clientY-r.top)/r.height*level.rows))*level.cols+Math.min(level.cols-1,Math.floor((event.clientX-r.left)/r.width*level.cols));}
-board.addEventListener('pointerdown',e=>{if(e.button!==0||e.target.closest('[data-shrink]'))return;const i=hit(e);if(i===null)return;e.preventDefault();if(resize){shrink(i);return;}board.setPointerCapture(e.pointerId);drag={first:i,last:i,moved:false,x:e.clientX,y:e.clientY,pointer:e.pointerId};started=true;});
+board.addEventListener('pointerdown',e=>{if(e.button!==0||e.target.closest('[data-shrink]'))return;const i=hit(e);if(i===null)return;if(level.blocked?.includes(i)){message('Blocked spaces stay empty. Build around them.');return;}e.preventDefault();if(resize){shrink(i);return;}board.setPointerCapture(e.pointerId);drag={first:i,last:i,moved:false,x:e.clientX,y:e.clientY,pointer:e.pointerId};started=true;});
 board.addEventListener('pointermove',e=>{if(!drag)return;const i=hit(e);if(i===null)return;if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>7||i!==drag.first)drag.moved=true;drag.last=i;if(drag.moved){selection=[drag.first,i];render();}});
 board.addEventListener('pointerup',e=>{if(!drag)return;const d=drag;drag=null;if(board.hasPointerCapture(e.pointerId))board.releasePointerCapture(e.pointerId);if(hit(e)===null){corner=null;selection=null;render();message('Selection cancelled. Keep both corners inside the screen.');return;}if(d.moved)commit(d.first,d.last);else tap(d.first);});
 board.addEventListener('pointercancel',()=>{drag=null;selection=null;corner=null;render();message('Selection cancelled.');});
 board.addEventListener('click',e=>{const button=e.target.closest('[data-shrink]');if(button){const p=placed.find(p=>p.id===button.dataset.shrink);if(p)shrink(p.cells[0]);return;}if(e.detail===0){const cell=e.target.closest('[data-cell]');if(cell)tap(Number(cell.dataset.cell));}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('help').open&&!$('share-fallback').open){corner=null;selection=null;resize=false;drag=null;inspectingId=null;render();}});
-board.addEventListener('keydown',e=>{const i=Number(e.target.dataset.cell);if(!Number.isInteger(i))return;if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();shrink(i);return;}const row=Math.floor(i/level.cols),col=i%level.cols;let next=i;if(e.key==='ArrowRight'&&col<level.cols-1)next++;else if(e.key==='ArrowLeft'&&col>0)next--;else if(e.key==='ArrowDown'&&row<level.rows-1)next+=level.cols;else if(e.key==='ArrowUp'&&row>0)next-=level.cols;else return;e.preventDefault();board.querySelector(`[data-cell="${next}"]`)?.focus();});
+board.addEventListener('keydown',e=>{const i=Number(e.target.dataset.cell);if(!Number.isInteger(i))return;if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();shrink(i);return;}const delta={ArrowRight:1,ArrowLeft:-1,ArrowDown:level.cols,ArrowUp:-level.cols}[e.key];if(!delta)return;e.preventDefault();let next=i+delta;while(next>=0&&next<level.cols*level.rows&&(Math.abs(delta)!==1||Math.floor(next/level.cols)===Math.floor(i/level.cols))){if(!level.blocked?.includes(next)){board.querySelector(`[data-cell="${next}"]`)?.focus();return;}next+=delta;}});
 $('undo').addEventListener('click',()=>{const previous=history.pop();if(!previous)return;if(previous.kind==='reset')({placed,hints,moves,elapsed,started,lastApp}=previous);else{placed=previous.placed;lastApp=previous.lastApp;moves++;started=true;}corner=null;selection=null;resize=false;inspectingId=null;save();render();message('One step back. A little more room to think.');});
 $('resize').addEventListener('click',()=>{resize=!resize;corner=null;selection=null;render();message(resize?'Select the widget you want to shrink back to an icon.':'Resize cancelled.');});
-$('reset').addEventListener('click',()=>{checkpoint('reset');placed=[];hints=0;moves=0;elapsed=0;started=false;corner=null;selection=null;resize=false;lastApp=null;inspectingId=null;save();render();message('A fresh screen. Undo can bring your layout back. Completed-screen records are kept.');});
+$('reset').addEventListener('click',()=>{checkpoint('reset');placed=initialPlacements(level);hints=0;moves=0;elapsed=0;started=false;corner=null;selection=null;resize=false;lastApp=null;inspectingId=null;save();render();message('A fresh screen. Undo can bring your layout back. Completed-screen records are kept.');});
 $('hint').addEventListener('click',()=>{checkpoint();const same=(a,b)=>a.length===b.length&&a.every(i=>b.includes(i));const wrong=placed.find(p=>!solution.some(s=>s.id===p.id&&same(s.cells,p.cells)));hints++;moves++;started=true;corner=null;selection=null;resize=false;
   if(wrong){placed=placed.filter(p=>p!==wrong);lastApp=null;message(`${appById(wrong.id).name} has the right size, but blocks the finished layout. Try a different shape.`);}
   else{const next=solution.find(s=>!placed.some(p=>p.id===s.id));if(next){placed.push(clone(next));lastApp=next.id;message(`${appById(next.id).name} found its place. Use its edges to help the next app.`);}}
   save();render(lastApp);
 });
 $('help-button').addEventListener('click',()=>$('help').showModal());$('close-help').addEventListener('click',()=>$('help').close());
-$('share').addEventListener('click',async()=>{if(!finished(level,placed))return;const emoji={sky:'🟦',rose:'🟥',mint:'🟩',butter:'🟨',lilac:'🟪',peach:'🟧'};const mosaic=Array.from({length:level.rows},(_,r)=>Array.from({length:level.cols},(_,c)=>emoji[appById(placed.find(p=>p.cells.includes(r*level.cols+c)).id).tone]).join('')).join('\n');const address=location.protocol.startsWith('http')?`\n${location.href}`:'';const text=`Widget Shuffle · ${level.name} · ${level.cols} × ${level.rows}\n${mosaic}\n${formatTime(elapsed)} · ${moves} moves · ${hints} hints\nA place for every app.${address}`;
+$('share').addEventListener('click',async()=>{if(!finished(level,placed))return;const emoji={sky:'🟦',rose:'🟥',mint:'🟩',butter:'🟨',lilac:'🟪',peach:'🟧'};const mosaic=Array.from({length:level.rows},(_,r)=>Array.from({length:level.cols},(_,c)=>{const i=r*level.cols+c;return level.blocked?.includes(i)?'⬛':emoji[appById(placed.find(p=>p.cells.includes(i)).id).tone];}).join('')).join('\n');const address=location.protocol.startsWith('http')?`\n${location.href}`:'';const text=`Widget Shuffle · ${level.name} · ${level.cols} × ${level.rows}\n${mosaic}\n${formatTime(elapsed)} · ${moves} moves · ${hints} hints\nA place for every app.${address}`;
   await copyText(text,'Result copied. Ready to share.');
 });
 const fallback=document.createElement('dialog');fallback.id='share-fallback';fallback.innerHTML='<h2>Share this screen</h2><textarea id="share-text" aria-label="Share text" readonly rows="11"></textarea><button type="button">Close</button>';document.body.append(fallback);fallback.querySelector('button').addEventListener('click',()=>fallback.close());fallback.querySelector('textarea').style.cssText='width:100%;font:14px/1.6 monospace;padding:10px;border:1px solid #bac8b7;border-radius:10px;background:#fffef7;color:#293d35';
@@ -116,26 +128,29 @@ async function copyText(text,success){try{await navigator.clipboard.writeText(te
 setInterval(()=>{if(!generating&&started&&!finished(level,placed)&&!document.hidden&&!$('help').open){elapsed++;$('timer').textContent=formatTime(elapsed);if(elapsed%5===0)save();}},1000);
 function rememberSession(){
  save();sessions.delete(activeMode);sessions.set(activeMode,clone({placed,history,hints,moves,elapsed,started,lastApp}));
- if(sessions.size>22){const oldest=[...sessions.keys()].find(key=>key.startsWith('seed:'));if(oldest)sessions.delete(oldest);}
+ if(sessions.size>22){const oldest=[...sessions.keys()].find(key=>key.startsWith('seed:')||key.startsWith('daily:'));if(oldest)sessions.delete(oldest);}
 }
 function showPuzzle(next,mode,initial=false){
   if(!initial)rememberSession();
   if(drag&&board.hasPointerCapture(drag.pointer))board.releasePointerCapture(drag.pointer);
   activeMode=mode;level=next;storageKey='widget-shuffle-'+level.id;solution=solve(level,1)[0];
   corner=null;selection=null;drag=null;resize=false;inspectingId=null;restore();document.body.dataset.mode=level.cols>=7?'expert':level.cols>=6?'hard':'intro';document.body.dataset.device=level.device;document.body.dataset.orientation=level.orientation;
-  $('campaign-mode').setAttribute('aria-pressed',String(!level.seed));$('endless-mode').setAttribute('aria-pressed',String(!!level.seed));
-  $('campaign-heading').hidden=!!level.seed;$('level-picker').hidden=!!level.seed;$('campaign-navigation').hidden=!!level.seed;$('endless-panel').hidden=!level.seed;
-  if(level.seed){lastEndlessSeed=level.seed;$('seed-input').value=level.seed;}else lastCampaignRank=mode;
+  const campaign=!level.seed&&!level.daily;
+  $('campaign-mode').setAttribute('aria-pressed',String(campaign));$('endless-mode').setAttribute('aria-pressed',String(!!level.seed));$('daily-mode').setAttribute('aria-pressed',String(!!level.daily));
+  $('campaign-heading').hidden=!campaign;$('chapter-navigation').hidden=!campaign;$('level-picker').hidden=!campaign;$('campaign-navigation').hidden=!campaign;$('endless-panel').hidden=!level.seed;$('daily-panel').hidden=!level.daily;
+  if(level.seed){lastEndlessSeed=level.seed;$('seed-input').value=level.seed;}else if(campaign){lastCampaignRank=mode;currentChapter=Math.ceil(level.rank/10);}
+  if(level.daily){$('daily-date').textContent=level.daily;$('daily-date').dateTime=level.daily;$('play-today').hidden=level.daily===hongKongDay();}
+  $('mechanic-note').hidden=!level.lesson;$('mechanic-note').textContent=level.lesson||'';
   board.style.setProperty('--cols',level.cols);board.style.setProperty('--rows',level.rows);
   board.style.setProperty('--board-ratio',`${level.cols} / ${level.rows*(level.cols>=6?.8:.91)}`);
   board.setAttribute('aria-label',`${level.name} home screen. ${level.cols} columns and ${level.rows} rows. Drag or select two corner cells.`);
-  $('screen-kicker').textContent=`${level.seed?'ENDLESS':`LEVEL ${level.rank}`} · ${level.device==='tablet'?'TABLET':'PHONE'} · ${level.cols} × ${level.rows}`;
-  $('level-description').textContent=`${level.seed?'A fresh arrangement':level.title}. ${level.apps.length} apps, ${level.cols*level.rows} spaces, one satisfying layout.`;
+  $('screen-kicker').textContent=`${level.daily?'DAILY EXPERT':level.seed?'ENDLESS':`LEVEL ${level.rank}`} · ${level.device==='tablet'?'TABLET':'PHONE'} · ${level.cols} × ${level.rows}`;
+  $('level-description').textContent=`${level.daily?'The daily arrangement':level.seed?'A fresh arrangement':level.title}. ${level.apps.length} apps, ${level.cols*level.rows-(level.blocked?.length||0)} spaces, one satisfying layout.`;
   $('difficulty-note').textContent=`${level.difficulty} · ${level.device==='tablet'?'Tablet':'Phone'} · ${level.orientation==='landscape'?'Landscape':'Portrait'}`;
-  window.history.replaceState(null,'',puzzleHash(level));
-  if(level.seed||finished(level,placed))save();
-  else try{localStorage.setItem('widget-shuffle-active',mode);}catch{}
-  render();message(`${level.seed?`Endless · ${level.difficulty}`:level.name}. ${level.apps.length} apps, one complete layout. Progress is saved separately.`);
+  window.history.replaceState(null,'',shareHash(level));
+  if(level.seed||level.daily||finished(level,placed))save();
+  else try{localStorage.setItem('widget-shuffle-active',shareHash(level).slice(1));localStorage.setItem('widget-shuffle-best-v2',JSON.stringify(bestScores));}catch{}
+  render();message(`${level.daily?`Daily Expert · ${level.daily}`:level.seed?`Endless · ${level.difficulty}`:level.name}. ${level.lesson||'One complete layout. Progress is saved separately.'}`);
 }
 function chooseLevel(mode,initial=false){if(!generating&&levels[mode])showPuzzle(levels[mode],mode,initial);}
 function freshSeed(){
@@ -144,31 +159,45 @@ function freshSeed(){
 }
 function setGenerating(value){
  generating=value;document.querySelector('main').setAttribute('aria-busy',String(value));board.inert=value;
- for(const element of document.querySelectorAll('[data-level],.play-modes button,#seed-input,#load-seed,#copy-puzzle,.puzzle-actions button,.tools button,#previous-level,#continue-level,#share'))element.disabled=value;
+ for(const element of document.querySelectorAll('[data-level],.play-modes button,#seed-input,#load-seed,#copy-puzzle,#copy-daily,#play-today,#chapter-select,#previous-chapter,#next-chapter,.puzzle-actions button,.tools button,#previous-level,#continue-level,#share'))element.disabled=value;
 }
 async function chooseSeed(input,initial=false){
  if(generating)return;
  let seed;
  try{seed=normalizeSeed(input);}catch(error){message(error.message,true);return;}
- if(seed===level.seed){$('seed-input').value=seed;window.history.replaceState(null,'',puzzleHash(level));message('This seed is already open. Reset starts its layout again.');return;}
+ if(seed===level.seed){$('seed-input').value=seed;window.history.replaceState(null,'',shareHash(level));message('This seed is already open. Reset starts its layout again.');return;}
  setGenerating(true);message('Making room for a new puzzle…');
  await new Promise(resolve=>setTimeout(resolve,0));
  try{
   const iterator=generatePuzzle(seed);let step,count=0;
   do{step=iterator.next();if(!step.done&&++count%12===0)await new Promise(resolve=>setTimeout(resolve,0));}while(!step.done);
   showPuzzle(step.value,`seed:${seed}`,initial);
- }catch(error){message(`Could not open that puzzle. ${error.message}`,true);window.history.replaceState(null,'',puzzleHash(level));}
+ }catch(error){message(`Could not open that puzzle. ${error.message}`,true);window.history.replaceState(null,'',shareHash(level));}
  finally{setGenerating(false);render();}
 }
+async function chooseDaily(day=hongKongDay(),initial=false){
+ if(generating||day===level.daily)return;
+ setGenerating(true);message('Preparing the daily Expert challenge…');
+ await new Promise(resolve=>setTimeout(resolve,0));
+ try{const iterator=generateDaily(day);let step,count=0;do{step=iterator.next();if(!step.done&&++count%12===0)await new Promise(resolve=>setTimeout(resolve,0));}while(!step.done);showPuzzle(step.value,`daily:${day}`,initial);}
+ catch(error){message(error.message,true);window.history.replaceState(null,'',shareHash(level));}
+ finally{setGenerating(false);render();}
+}
+function copyDaily(){if(!level.daily)return;const url=new URL(location.protocol.startsWith('http')?location.href:'https://lamkeykey2010.github.io/widget-shuffle/');url.hash=shareHash(level);copyText(`Widget Shuffle · Daily Expert · ${level.daily}\n${url.href}`,'Daily challenge link copied. Same date, same Expert board.');}
 for(const [rank,entry] of Object.entries(levels)){const button=document.createElement('button');button.type='button';button.dataset.level=rank;button.setAttribute('aria-pressed','false');button.innerHTML=`<span class="level-number">${rank}<span class="level-mark" aria-hidden="true"></span></span><span class="level-difficulty">${entry.difficulty}</span>`;button.title=entry.title;button.addEventListener('click',()=>{if(activeMode!==rank)chooseLevel(rank);});$('level-picker').append(button);}
 $('previous-level').addEventListener('click',()=>chooseLevel(String(level.rank-1)));
-$('next-level').addEventListener('click',()=>level.seed?chooseSeed(freshSeed()):chooseLevel(String(level.rank+1)));
-$('continue-level').addEventListener('click',()=>{if(level.seed)chooseSeed(freshSeed());else chooseLevel(level.rank===10?'1':String(level.rank+1));document.querySelector('.site-header').scrollIntoView({behavior:'instant',block:'start'});});
-$('campaign-mode').addEventListener('click',()=>{if(level.seed)chooseLevel(lastCampaignRank);});
+$('next-level').addEventListener('click',()=>level.daily?copyDaily():level.seed?chooseSeed(freshSeed()):chooseLevel(String(level.rank+1)));
+$('continue-level').addEventListener('click',()=>{if(level.seed||level.daily)chooseSeed(freshSeed());else chooseLevel(level.rank===100?'1':String(level.rank+1));document.querySelector('.site-header').scrollIntoView({behavior:'instant',block:'start'});});
+$('campaign-mode').addEventListener('click',()=>{if(level.seed||level.daily)chooseLevel(lastCampaignRank);});
 $('endless-mode').addEventListener('click',()=>{if(!level.seed)chooseSeed(lastEndlessSeed||freshSeed());});
+$('daily-mode').addEventListener('click',()=>chooseDaily());$('play-today').addEventListener('click',()=>chooseDaily());$('copy-daily').addEventListener('click',copyDaily);
+for(let chapter=1;chapter<=10;chapter++){const option=document.createElement('option');option.value=chapter;option.textContent=`${chapter}. ${campaignChapters[chapter-1]} · ${(chapter-1)*10+1} to ${chapter*10}`;$('chapter-select').append(option);}
+$('chapter-select').addEventListener('change',()=>{currentChapter=Number($('chapter-select').value);render();});
+$('previous-chapter').addEventListener('click',()=>{currentChapter=Math.max(1,currentChapter-1);render();});$('next-chapter').addEventListener('click',()=>{currentChapter=Math.min(10,currentChapter+1);render();});
 $('seed-form').addEventListener('submit',event=>{event.preventDefault();chooseSeed($('seed-input').value);});
 $('copy-puzzle').addEventListener('click',()=>{if(!level.seed)return;const url=new URL(location.protocol.startsWith('http')?location.href:'https://lamkeykey2010.github.io/widget-shuffle/');url.hash=puzzleHash(level);copyText(`Widget Shuffle · ${level.difficulty}\nSeed: ${level.seed}\n${url.href}`,'Puzzle link copied. Same seed, same screen.');});
-window.addEventListener('hashchange',()=>{try{const route=routeFromHash(location.hash);if(route.seed){if(route.seed!==level.seed)chooseSeed(route.seed);}else if(route.rank!==activeMode)chooseLevel(route.rank);}catch(error){window.history.replaceState(null,'',puzzleHash(level));message(error.message,true);}});
+window.addEventListener('hashchange',()=>{try{const route=readRoute(location.hash);if(route.daily)chooseDaily(route.daily);else if(route.seed){if(route.seed!==level.seed)chooseSeed(route.seed);}else if(route.rank!==activeMode)chooseLevel(route.rank);}catch(error){window.history.replaceState(null,'',shareHash(level));message(error.message,true);}});
+setInterval(()=>{if(level.daily)$('play-today').hidden=level.daily===hongKongDay();},30000);
 window.addEventListener('pagehide',save);new ResizeObserver(adaptWidgets).observe(board);
-if(initialRoute.seed)chooseSeed(initialRoute.seed,true);else chooseLevel(initialRoute.rank,true);
+if(initialRoute.daily)chooseDaily(initialRoute.daily,true);else if(initialRoute.seed)chooseSeed(initialRoute.seed,true);else chooseLevel(initialRoute.rank,true);
 if(initialError)message(initialError,true);

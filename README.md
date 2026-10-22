@@ -4,26 +4,26 @@ A browser puzzle about making a little room. Draw rectangles around app icons an
 
 **Play:** https://lamkeykey2010.github.io/widget-shuffle/
 
-## Ten screens
+## One hundred screens
 
-All levels use the same Shikaku rules: exactly one app per rectangle, rectangle area equals its badge, no overlaps or gaps. Every fixed board has a unique solution, independently checked by a second exact-cover verifier.
+The campaign has ten chapters of ten boards. Each has one unique solution, independently checked by a second exact-cover verifier. Chapter selection shows ten level buttons at a time.
 
-| Level | Screen | Grid | Apps | Guide |
-| --- | --- | --- | --- | --- |
-| 1 | First Screen | 4 × 6 | 6 | Intro |
-| 2 | Quiet Morning | 4 × 6 | 6 | Easy |
-| 3 | Room to Grow | 5 × 6 | 7 | Easy |
-| 4 | Little Routine | 5 × 7 | 8 | Medium |
-| 5 | Fresh Start | 6 × 7 | 9 | Medium |
-| 6 | In the Flow | 6 × 8 | 10 | Hard |
-| 7 | Every Little Space | 6 × 8 | 10 | Hard |
-| 8 | A Full Day | 8 × 7 | 12 | Hard |
-| 9 | Think Ahead | 9 × 8 | 14 | Expert |
-| 10 | Everything in Its Place | 8 × 10 | 15 | Expert |
+| Levels | Chapter | Main idea |
+| --- | --- | --- |
+| 1 to 10 | First steps | Small phone boards and basic rectangle rules |
+| 11 to 20 | Finding your flow | More candidate shapes |
+| 21 to 30 | Stay in place | Locked widgets already occupy their correct rectangle |
+| 31 to 40 | Make some space | Hatched blocked cells must stay empty |
+| 41 to 50 | A different shape | Wide, tall and square app requirements |
+| 51 to 60 | Around the dock | Locked widgets and blocked spaces together |
+| 61 to 70 | Turn the screen | Landscape layouts with obstacles and shape clues |
+| 71 to 80 | Think ahead | Expert deduction and look-ahead |
+| 81 to 90 | Everything connects | Expert locked-widget and shape combinations |
+| 91 to 100 | One last arrangement | Expert obstacle and shape combinations |
 
-Difficulty labels are provisional guides. Boards were selected using candidate ambiguity and deduction/search behavior under the same authoring solver. These measures are not human playtest ratings. The larger screens are more comfortable on desktop or tablet. On small screens, widgets show compact summaries and full descriptions below the board.
+The authoring score is nondecreasing across all 100 boards. It combines search depth, unresolved choices after propagation, candidate counts and board area. This is a measured authoring guide, not a guarantee of how every person will experience difficulty. Fixed blocks can simplify a board, so ratings are recomputed after adding mechanics.
 
-Levels 1 to 5 use portrait phone frames. Levels 6, 7 and 10 use portrait tablet frames. Levels 8 and 9 use landscape tablet frames. Device shape and orientation are fixed by the level, with no rotation toggle. Landscape boards transpose the authored portrait geometry, preserving their solution uniqueness and rules.
+The original ten boards remain intact at new positions. Progress still uses their original board IDs. Original #level=1 to #level=10 links resolve to those same boards, and campaign v2 shares use #campaign=2&level=1 through #campaign=2&level=100. Legacy best records migrate into the new board-ID-based score store without deleting the old records. Device shape and orientation stay fixed per board.
 
 ## Play
 
@@ -33,7 +33,7 @@ Tab and arrow keys navigate the grid. Enter or Space select corners. Delete on a
 
 Progress is saved separately per level in local browser storage. Completed-screen records remain available when replaying. Best records prefer fewer hints, then faster time, then fewer moves. Undo does not refund used hints or elapsed time. Hints, shrinking and Undo count as moves. Invalid rectangle attempts do not count. Sharing copies the completed layout, time, hint count and a link to the same level. A manual-copy fallback is available when clipboard access is blocked.
 
-All ten campaign levels are available from the start. Endless mode generates seeded puzzles in the browser. There is no daily schedule, leaderboard, account, backend, advertising or analytics. App content is fictional. Browser storage availability determines whether progress survives reloads.
+All 100 campaign levels are available from the start. Endless mode generates seeded puzzles in the browser. A dated Daily Expert puzzle resets at midnight Hong Kong time. There is no leaderboard, account, backend, advertising or analytics. App content is fictional. Browser storage availability determines whether progress survives reloads.
 
 Next level and Reset sit beside the top of the puzzle on wide screens. On smaller screens they sit above the board in a sticky row. Reset affects the current layout and can be reversed with Undo. The final level disables Next level, and the level picker remains available.
 
@@ -50,6 +50,14 @@ Generation yields to the browser and uses deterministic attempt and solver-node 
 Progress and best results for the latest twelve Endless seeds are stored separately from campaign records. Reset preserves completion records, and Undo can restore the previous layout during the current session. Shared links carry the puzzle seed, without the sender's moves or saved progress.
 
 Future generator changes must use a new seed prefix and preserve v1 behavior. Pinned board fingerprints guard against accidentally changing published seed links. Tests independently solve 120 seeds, check all four tiers and both orientations, verify reproducibility and routing, and cover bounded progress retention.
+
+## Daily Expert
+
+Daily mode selects one deterministic Expert board for the Hong Kong calendar date. Everyone opening the same date gets the same layout. Each selected daily board must have at least two levels of look-ahead and four unresolved choices after strong deductions under the shared analyzer. A fixed reflection of the original Expert is the bounded fallback, so Daily never downgrades to Easy or Medium.
+
+Daily links use #daily=YYYY-MM-DD&dv=1. The link #daily=today resolves to the current Hong Kong date. Old date links remain playable. Open puzzles are not replaced at midnight. Instead, a Play today's challenge button becomes available so a player can finish their current board. Date changes use Asia/Hong_Kong rather than the device's local timezone. The calendar still relies on the browser's clock.
+
+The latest 32 dated progress and best-score records are stored separately from campaign and Endless records. Copy daily challenge link works before completion, and Share result includes the date after completion. There is no server or scheduled deployment. Daily v1 behavior must remain stable for old date links.
 
 ## Run locally
 

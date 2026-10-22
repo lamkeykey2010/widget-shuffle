@@ -11,12 +11,17 @@ export function inspect(level,cells,placed=[]){
   if(apps.length!==1)return {ok:false,message:apps.length?'Give each app its own widget.':'Include an app icon in your rectangle.'};
   const app=apps[0];
   if(cells.length!==app.area)return {ok:false,message:`${app.name} needs ${app.area} spaces. You selected ${cells.length}.`};
+  if(cells.some(i=>level.blocked?.includes(i)))return {ok:false,message:'Blocked spaces stay empty. Build around them.'};
+  const h=Math.max(...rs)-Math.min(...rs)+1,w=Math.max(...cs)-Math.min(...cs)+1;
+  if((app.shape==='wide'&&w<=h)||(app.shape==='tall'&&h<=w)||(app.shape==='square'&&w!==h))return {ok:false,message:`${app.name} needs a ${app.shape} widget.`};
+  const locked=level.locked?.find(p=>p.id===app.id);
+  if(locked&&(locked.cells.length!==cells.length||!cells.every(i=>locked.cells.includes(i))))return {ok:false,message:`${app.name} is locked in place.`};
   if(placed.some(p=>p.cells.some(i=>cells.includes(i))))return {ok:false,message:'That overlaps another widget. Resize it first.'};
   return {ok:true,id:app.id,message:`${app.name} expanded. ${app.detail}`};
 }
 export function finished(level,placed){
   const all=placed.flatMap(p=>p.cells);
-  return all.length===level.cols*level.rows&&new Set(all).size===all.length&&placed.length===level.apps.length&&placed.every((p,k)=>{const v=inspect(level,p.cells,placed.filter((_,j)=>j!==k));return v.ok&&v.id===p.id;});
+  return all.length===level.cols*level.rows-(level.blocked?.length||0)&&new Set(all).size===all.length&&placed.length===level.apps.length&&placed.every((p,k)=>{const v=inspect(level,p.cells,placed.filter((_,j)=>j!==k));return v.ok&&v.id===p.id;});
 }
 export function solve(level,limit=2,nodeLimit=Infinity){
   const choices=level.apps.map(app=>{
@@ -24,7 +29,7 @@ export function solve(level,limit=2,nodeLimit=Infinity){
     for(let h=1;h<=level.rows;h++)if(app.area%h===0){const w=app.area/h;if(w>level.cols)continue;
       for(let r=0;r+h<=level.rows;r++)for(let c=0;c+w<=level.cols;c++){
         const cells=cellsFor(level.cols,r*level.cols+c,(r+h-1)*level.cols+c+w-1);
-        if(cells.includes(app.i)&&level.apps.filter(a=>cells.includes(a.i)).length===1)out.push({id:app.id,cells});
+        if(cells.includes(app.i)&&level.apps.filter(a=>cells.includes(a.i)).length===1&&inspect(level,cells).ok)out.push({id:app.id,cells});
       }
     }return out;
   });
@@ -37,5 +42,6 @@ export function solve(level,limit=2,nodeLimit=Infinity){
     for(const k of remaining){const options=choices[k].filter(p=>!p.cells.some(i=>used.has(i)));if(!options.length)return;if(!best||options.length<best.options.length)best={k,options};}
     for(const p of best.options)visit(remaining.filter(k=>k!==best.k),new Set([...used,...p.cells]),[...placed,p]);
   }
-  visit(choices.map((_,i)=>i),new Set(),[]);return solutions;
+  visit(choices.map((_,i)=>i),new Set(level.blocked||[]),[]);return solutions;
 }
+export function initialPlacements(level){return (level.locked||[]).map(p=>({id:p.id,cells:[...p.cells]}));}
